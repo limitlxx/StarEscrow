@@ -64,12 +64,35 @@ impl AppConfig {
                 .ignore_empty(true),
         );
 
-        builder
+        let cfg: AppConfig = builder
             .build()
             .context("building config")?
             .try_deserialize()
-            .context("deserialising config")
+            .context("deserialising config")?;
+
+        Ok(apply_explicit_env_overrides(cfg))
     }
+}
+
+
+
+fn apply_explicit_env_overrides(mut cfg: AppConfig) -> AppConfig {
+    if let Ok(v) = std::env::var("STAR_ESCROW_RPC_URL") {
+        if !v.trim().is_empty() {
+            cfg.rpc_url = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("STAR_ESCROW_NETWORK_PASSPHRASE") {
+        if !v.trim().is_empty() {
+            cfg.network_passphrase = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("STAR_ESCROW_CONTRACT_ID") {
+        if !v.trim().is_empty() {
+            cfg.contract_id = Some(v);
+        }
+    }
+    cfg
 }
 
 #[cfg(test)]

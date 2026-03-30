@@ -7,7 +7,8 @@
 ///   - Verifying signatures
 use anyhow::{Context, Result};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
-use rand_core::OsRng;
+use rand::rngs::OsRng;
+use rand::RngCore;
 use stellar_strkey::ed25519::{PrivateKey as StrkeySecret, PublicKey as StrkeyPublic};
 
 /// A Stellar keypair wrapping an ed25519 signing key.
@@ -18,7 +19,10 @@ pub struct Keypair {
 impl Keypair {
     /// Generate a fresh random keypair using the OS CSPRNG.
     pub fn generate() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
+        let mut rng = OsRng;
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        let signing_key = SigningKey::from_bytes(&seed);
         Self { signing_key }
     }
 
@@ -32,7 +36,9 @@ impl Keypair {
 
     /// Return the Stellar-encoded secret key (S...).
     pub fn secret_key_str(&self) -> String {
-        StrkeySecret(self.signing_key.to_bytes()).to_string().to_string()
+        StrkeySecret(self.signing_key.to_bytes())
+            .to_string()
+            .to_string()
     }
 
     /// Return the Stellar-encoded public address (G...).
@@ -71,8 +77,14 @@ mod tests {
         let kp = Keypair::generate();
         let secret = kp.secret_key_str();
         let public = kp.public_key_str();
-        assert!(secret.starts_with('S'), "secret key should start with S, got: {secret}");
-        assert!(public.starts_with('G'), "public key should start with G, got: {public}");
+        assert!(
+            secret.starts_with('S'),
+            "secret key should start with S, got: {secret}"
+        );
+        assert!(
+            public.starts_with('G'),
+            "public key should start with G, got: {public}"
+        );
     }
 
     #[test]
@@ -80,7 +92,11 @@ mod tests {
         let kp1 = Keypair::generate();
         let secret = kp1.secret_key_str();
         let kp2 = Keypair::from_secret_str(&secret).expect("should parse own secret");
-        assert_eq!(kp1.public_key_str(), kp2.public_key_str(), "public keys must match after roundtrip");
+        assert_eq!(
+            kp1.public_key_str(),
+            kp2.public_key_str(),
+            "public keys must match after roundtrip"
+        );
     }
 
     #[test]
@@ -97,7 +113,10 @@ mod tests {
         let payload = b"original payload data here 32byt";
         let sig = kp.sign(payload);
         let tampered = b"tampered payload data here 32byt";
-        assert!(kp.verify(tampered, &sig).is_err(), "tampered payload must not verify");
+        assert!(
+            kp.verify(tampered, &sig).is_err(),
+            "tampered payload must not verify"
+        );
     }
 
     #[test]
@@ -106,7 +125,10 @@ mod tests {
         let kp2 = Keypair::generate();
         let payload = b"some transaction payload 32 bytes";
         let sig = kp1.sign(payload);
-        assert!(kp2.verify(payload, &sig).is_err(), "signature from kp1 must not verify with kp2");
+        assert!(
+            kp2.verify(payload, &sig).is_err(),
+            "signature from kp1 must not verify with kp2"
+        );
     }
 
     #[test]
