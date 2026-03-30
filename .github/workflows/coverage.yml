@@ -7,6 +7,41 @@ on:
     branches: [main]
 
 jobs:
+  tarpaulin:
+    name: cargo-tarpaulin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+
+      - name: Run tarpaulin
+        run: |
+          cargo tarpaulin \
+            --workspace \
+            --exclude-files "contracts/escrow/fuzz/*" \
+            --out Xml \
+            --out Html \
+            --output-dir coverage/ \
+            --fail-under 80
+        env:
+          SOROBAN_TEST_SNAPSHOT_UPDATE: "0"
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage/
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/cobertura.xml
+          fail_ci_if_error: false
+
   llvm-cov:
     name: cargo-llvm-cov
     runs-on: ubuntu-latest
@@ -31,7 +66,7 @@ jobs:
       - name: Upload HTML report artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-html
+          name: coverage-llvm-html
           path: coverage-html/
 
       - name: Upload to Codecov

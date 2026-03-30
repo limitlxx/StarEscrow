@@ -28,6 +28,32 @@ jobs:
         run: cargo test --workspace
         env:
           SOROBAN_TEST_SNAPSHOT_UPDATE: "0"
+          # Fail CI if insta snapshots are missing or changed.
+          INSTA_UPDATE: "no"
+
+      - name: Validate insta snapshots
+        run: |
+          cargo install cargo-insta --locked 2>/dev/null || true
+          cargo insta test --workspace --unreferenced=reject
+        env:
+          INSTA_UPDATE: "no"
+
+  bench:
+    name: Benchmarks (smoke-test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run benchmarks (1 sample — smoke test only)
+        run: cargo bench -p cli -- --sample-size 10
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-results
+          path: target/criterion/
 
   udeps:
     name: Unused dependencies (advisory)
