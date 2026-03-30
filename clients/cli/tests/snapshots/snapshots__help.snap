@@ -1,0 +1,33 @@
+---
+source: clients/cli/tests/snapshots.rs
+assertion_line: 24
+expression: output
+---
+Usage: star-escrow.exe [OPTIONS] <COMMAND>
+
+Commands:
+  init                 
+  pause                
+  unpause              
+  create               
+  submit-work          
+  transfer-freelancer  
+  approve              
+  cancel               
+  expire               
+  status               
+  watch                Watch a contract's status, polling periodically
+  list                 
+  verify               
+  help                 Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <FILE>                            
+      --network <NETWORK>                        [possible values: testnet, mainnet, futurenet]
+      --rpc-url <RPC_URL>                        
+      --network-passphrase <NETWORK_PASSPHRASE>  
+      --json                                     
+      --dry-run                                  
+      --no-confirm                               
+  -h, --help                                     Print help
+  -V, --version                                  Print version

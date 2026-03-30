@@ -29,7 +29,7 @@ pub fn verify_wasm_hash(path: &std::path::Path, expected_hex: &str) -> Result<bo
 }
 
 /// Fetch the on-chain WASM hash for a deployed contract via Soroban JSON-RPC.
-pub fn fetch_onchain_hash(
+pub async fn fetch_onchain_hash(
     rpc_url: &str,
     _network_passphrase: &str,
     contract_id: &str,
@@ -37,6 +37,7 @@ pub fn fetch_onchain_hash(
     let client = crate::rpc::RpcClient::new(rpc_url);
     client
         .get_contract_wasm_hash(contract_id)
+        .await
         .context("unable to fetch on-chain WASM hash via SDK RPC")
 }
 

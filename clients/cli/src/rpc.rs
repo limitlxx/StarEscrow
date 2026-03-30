@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -25,7 +25,7 @@ impl RpcClient {
     }
 
     /// Invokes a contract function directly via Soroban JSON-RPC.
-    pub fn invoke_contract(
+    pub async fn invoke_contract(
         &self,
         contract_id: &str,
         source_secret: &str,
@@ -42,7 +42,10 @@ impl RpcClient {
             network_passphrase,
             sim_only,
         );
-        let response = self.call(payload).context("contract invocation failed")?;
+        let response = self
+            .call(payload)
+            .await
+            .context("contract invocation failed")?;
         let result = response.get("result").cloned().unwrap_or_else(|| json!({}));
         let status = result
             .get("status")
@@ -61,7 +64,7 @@ impl RpcClient {
         })
     }
 
-    pub fn query_contract(
+    pub async fn query_contract(
         &self,
         contract_id: &str,
         function: &str,
@@ -80,11 +83,14 @@ impl RpcClient {
                 "readOnly": true,
             }
         });
-        let response = self.call(payload).context("contract query failed")?;
+        let response = self
+            .call(payload)
+            .await
+            .context("contract query failed")?;
         Ok(response.get("result").cloned().unwrap_or(Value::Null))
     }
 
-    pub fn get_events(&self, contract_id: &str) -> Result<Vec<Value>> {
+    pub async fn get_events(&self, contract_id: &str) -> Result<Vec<Value>> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -96,6 +102,7 @@ impl RpcClient {
         });
         let response = self
             .call(payload)
+            .await
             .context("fetching contract events failed")?;
         let events = response["result"]["events"]
             .as_array()
@@ -104,7 +111,7 @@ impl RpcClient {
         Ok(events)
     }
 
-    pub fn get_contract_wasm_hash(&self, contract_id: &str) -> Result<String> {
+    pub async fn get_contract_wasm_hash(&self, contract_id: &str) -> Result<String> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -113,6 +120,7 @@ impl RpcClient {
         });
         let response = self
             .call(payload)
+            .await
             .context("fetching on-chain contract code failed")?;
         let hash = response["result"]["wasmHash"]
             .as_str()
@@ -120,12 +128,13 @@ impl RpcClient {
         Ok(hash.to_owned())
     }
 
-    fn call(&self, body: Value) -> Result<Value> {
+    async fn call(&self, body: Value) -> Result<Value> {
         let resp = self
             .client
             .post(&self.url)
             .json(&body)
             .send()
+            .await
             .context("RPC request failed")?;
 
         if !resp.status().is_success() {
@@ -136,7 +145,7 @@ impl RpcClient {
             );
         }
 
-        let json: Value = resp.json().context("failed to parse RPC JSON response")?;
+        let json: Value = resp.json().await.context("failed to parse RPC JSON response")?;
         if let Some(err) = json.get("error") {
             bail!("RPC error from {}: {}", body["method"], err);
         }
@@ -199,10 +208,10 @@ mod tests {
         assert_eq!(client.url, "https://soroban-testnet.stellar.org");
     }
 
-    #[test]
-    fn test_rpc_network_error_is_descriptive() {
+    #[tokio::test]
+    async fn test_rpc_network_error_is_descriptive() {
         let client = RpcClient::new("http://127.0.0.1:1");
-        let result = client.get_events("CABC");
+        let result = client.get_events("CABC").await;
         let err = result.expect_err("should fail without RPC server");
         assert!(
             err.to_string().contains("fetching contract events failed"),
