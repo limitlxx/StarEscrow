@@ -3,14 +3,16 @@
 /// Computes SHA-256 hashes of local WASM files and compares them against
 /// on-chain hashes fetched via the Stellar CLI, using lowercase hex encoding
 /// to match Stellar's format.
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sha2::{Digest, Sha256};
+
+use crate::error::CliError;
 
 /// Compute the SHA-256 hash of a local WASM file and return it as a
 /// lowercase hex string (64 characters), matching Stellar's on-chain format.
 pub fn hash_wasm_file(path: &std::path::Path) -> Result<String> {
     let bytes = std::fs::read(path)
-        .with_context(|| format!("failed to read WASM file: {}", path.display()))?;
+        .map_err(|e| CliError::file_read_error(path, e))?;
     Ok(hash_wasm_bytes(&bytes))
 }
 
@@ -37,7 +39,7 @@ pub fn fetch_onchain_hash(
     let client = crate::rpc::RpcClient::new(rpc_url);
     client
         .get_contract_wasm_hash(contract_id)
-        .context("unable to fetch on-chain WASM hash via SDK RPC")
+        .map_err(|e| CliError::rpc_error(format!("unable to fetch on-chain WASM hash: {}", e)).into())
 }
 
 #[cfg(test)]

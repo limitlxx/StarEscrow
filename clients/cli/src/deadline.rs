@@ -5,8 +5,10 @@
 ///   - Parsing ISO 8601 strings into Unix timestamps
 ///   - Formatting Unix timestamps as human-readable ISO 8601 strings
 ///   - Validation (deadline must be in the future)
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
+
+use crate::error::CliError;
 
 /// Parse an ISO 8601 datetime string (e.g. "2026-12-31T23:59:59Z") into a
 /// Unix timestamp (seconds since epoch) suitable for use as a ledger deadline.
@@ -15,10 +17,10 @@ use chrono::{DateTime, TimeZone, Utc};
 /// timezone offsets. The result is always UTC epoch seconds.
 pub fn parse_iso8601_to_timestamp(s: &str) -> Result<u64> {
     let dt = DateTime::parse_from_rfc3339(s)
-        .with_context(|| format!("invalid ISO 8601 datetime: '{s}' — expected format: 2026-12-31T23:59:59Z"))?;
+        .map_err(|_| CliError::invalid_deadline(s))?;
     let ts = dt.timestamp();
     if ts < 0 {
-        anyhow::bail!("deadline must be after Unix epoch (1970-01-01T00:00:00Z)");
+        return Err(CliError::invalid_deadline("deadline must be after Unix epoch (1970-01-01T00:00:00Z)").into());
     }
     Ok(ts as u64)
 }
@@ -66,7 +68,13 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_string_returns_error() {
-        assert!(parse_iso8601_to_timestamp("not-a-date").is_err());
+        let err = parse_iso8601_to_timestamp("not-a-date").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid deadline"), "Error should be CliError::InvalidDeadline: {}", msg);
+    }
+
+    #[test]
+    fn test_parse_invalid_format_errors() {
         assert!(parse_iso8601_to_timestamp("2026/12/31").is_err());
         assert!(parse_iso8601_to_timestamp("").is_err());
     }
