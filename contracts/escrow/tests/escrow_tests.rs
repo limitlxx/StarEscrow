@@ -969,3 +969,13 @@ fn test_approve_unauthorized() {
     s.env.mock_all_auths();
     assert_eq!(s.contract.get_escrow().status, EscrowStatus::WorkSubmitted);
 }
+
+#[test]
+fn test_approve_after_cancel_fails() {
+    let s = Setup::new();
+    s.simple_create(500, "Approve after cancel");
+    s.contract.cancel();
+    assert_eq!(s.contract.get_status(), EscrowStatus::Cancelled);
+    let err = s.contract.try_approve(&0u32).unwrap_err().unwrap();
+    assert_eq!(err, EscrowError::MilestoneNotSubmitted);
+}
