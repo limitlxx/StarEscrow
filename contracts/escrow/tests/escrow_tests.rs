@@ -52,11 +52,11 @@ impl<'a> Setup<'a> {
         let env = Env::default();
         env.mock_all_auths();
 
-        let payer = test_address("payer");
-        let freelancer = test_address("freelancer");
-        let arbitrator = test_address("arbitrator");
-        let admin = test_address("admin");
-        let fee_collector = test_address("fee_collector");
+        let payer = Address::generate(&env);
+        let freelancer = Address::generate(&env);
+        let arbitrator = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let fee_collector = Address::generate(&env);
 
         let (token, token_admin) = create_token(&env, &admin);
         let token_addr = token.address.clone();
@@ -130,7 +130,7 @@ fn test_approve_before_submit_fails() {
     let s = Setup::new();
     s.simple_create(100, "Approve before submit");
     let err = s.contract.try_approve(&0u32).unwrap_err().unwrap();
-    assert_eq!(err, EscrowError::WorkNotSubmitted);
+    assert_eq!(err, EscrowError::MilestoneNotSubmitted);
 }
 
 #[test]
@@ -258,7 +258,7 @@ fn test_get_status_expired() {
 #[test]
 fn test_transfer_freelancer_and_submit() {
     let s = Setup::new();
-    let new_freelancer = test_address("new_freelancer");
+    let new_freelancer = Address::generate(&s.env);
     s.simple_create(400, "Subcontract work");
     s.contract.transfer_freelancer(&new_freelancer);
     s.contract.submit_work(&0u32);
@@ -898,7 +898,7 @@ fn test_get_escrow_return_values_lifecycle() {
         String::from_str(&s.env, "Cancel test milestone")
     );
     assert_eq!(escrow_data.milestones.get(0).unwrap().amount, 300);
-    assert_eq!(escrow_data.milestones.get(0).unwrap().status, storage::MilestoneStatus::Submitted);
+    assert_eq!(escrow_data.milestones.get(0).unwrap().status, storage::MilestoneStatus::Approved);
 }
 
 #[test]
@@ -940,4 +940,32 @@ fn test_get_escrow_return_values_cancel() {
     );
     assert_eq!(escrow_data.milestones.get(0).unwrap().amount, 300);
     assert_eq!(escrow_data.milestones.get(0).unwrap().status, storage::MilestoneStatus::Pending);
+}
+
+#[test]
+fn test_approve_unauthorized() {
+    use soroban_sdk::testutils::MockAuth;
+    use soroban_sdk::testutils::MockAuthInvoke;
+
+    let s = Setup::new();
+    s.simple_create(100, "Unauthorized approve");
+    s.contract.submit_work(&0u32);
+
+    let attacker = Address::generate(&s.env);
+
+    s.env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &s.contract.address,
+            fn_name: "approve",
+            args: (0u32,).into_val(&s.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = s.contract.try_approve(&0u32);
+    assert!(result.is_err(), "approve by non-payer should fail");
+
+    s.env.mock_all_auths();
+    assert_eq!(s.contract.get_escrow().status, EscrowStatus::WorkSubmitted);
 }

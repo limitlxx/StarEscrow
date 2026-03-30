@@ -278,16 +278,18 @@ impl EscrowContract {
         if milestone_idx >= data.milestones.len() {
             return Err(errors::EscrowError::MilestoneInvalidIndex);
         }
-        let milestone = data.milestones.get(milestone_idx).unwrap();
+        let mut milestone = data.milestones.get(milestone_idx).unwrap();
         if milestone.status != storage::MilestoneStatus::Submitted {
             return Err(errors::EscrowError::MilestoneNotSubmitted);
         }
         data.payer.require_auth();
 
+        let milestone_amount = milestone.amount;
+        let description = milestone.description.clone();
         let client = token::Client::new(&env, &data.token);
-        let (freelancer_amount, fee_amount) = if storage::has_config(&env) {
+        let (net_amount, _fee_amount) = if storage::has_config(&env) {
             let config = storage::load_config(&env);
-            let fee = (data.amount * (config.fee_bps as i128)) / 10000;
+            let fee = (milestone_amount * (config.fee_bps as i128)) / 10000;
             if fee > 0 {
                 client.transfer(&env.current_contract_address(), &config.fee_collector, &fee);
             }
@@ -400,6 +402,23 @@ impl EscrowContract {
         }
 
         storage::save_escrow(&env, &data);
+        Ok(())
+    }
+
+    pub fn partial_release(env: Env, _token: Address, amount: i128) -> Result<(), EscrowError> {
+        Self::assert_not_paused(&env)?;
+        let data = storage::load_escrow(&env);
+        if data.status != EscrowStatus::Active {
+            return Err(EscrowError::NotActive);
+        }
+        data.payer.require_auth();
+        let balance = token::Client::new(&env, &data.token).balance(&env.current_contract_address());
+        if amount > balance {
+            return Err(EscrowError::InsufficientFunds);
+        }
+        token::Client::new(&env, &data.token)
+            .transfer(&env.current_contract_address(), &data.freelancer, &amount);
+        storage::extend_ttl(&env);
         Ok(())
     }
 
@@ -656,7 +675,7 @@ impl EscrowContract {
             let key = change.key.clone();
             let value = change.value.clone();
             if key == String::from_str(&env, "fee_bps") {
-                let bps = parse_u32_from_string(&env, &value).ok_or(EscrowError::InvalidAmount)?;
+                let bps = parse_u32_from_soroban_string(&value).ok_or(EscrowError::InvalidAmount)?;
                 config.fee_bps = bps;
             } else if key == String::from_str(&env, "fee_collector") {
                 config.fee_collector = Address::from_string(&value);
