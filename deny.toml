@@ -1,0 +1,54 @@
+[graph]
+targets = []
+
+[licenses]
+version = 2
+# Allowed SPDX license identifiers
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "OpenSSL",
+]
+# Treat unlicensed crates as an error
+unlicensed = "deny"
+# Deny copyleft licenses not in the allow list
+copyleft = "deny"
+# Allow multiple licenses when at least one is in the allow list
+allow-osi-fsf-free = "neither"
+default = "deny"
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+# Deny multiple versions of the same crate (warn by default to avoid noise)
+multiple-versions = "warn"
+# Deny wildcard dependencies
+wildcards = "deny"
+# Known-bad / deprecated crates to ban outright
+deny = [
+    # Unmaintained crypto crates
+    { name = "openssl" },
+    # Deprecated time crate (use chrono or time 0.3+)
+    { name = "time", wrappers = ["chrono"] },
+]
+
+[advisories]
+# Use the RustSec advisory database
+version = 2
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
