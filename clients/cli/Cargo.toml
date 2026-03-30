@@ -9,8 +9,8 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
-clap_complete = "4"
 anyhow = "1"
+thiserror = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -31,12 +31,21 @@ rand = "0.8"
 base64 = "0.22"
 # Issue #142: secure secret key storage via OS keychain
 keyring = "2"
-# Issue #143: direct Soroban RPC calls
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+# Issue #143: direct Soroban RPC calls (async)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 # Issue #144: XDR encoding/decoding
 stellar-xdr = { version = "21", features = ["curr"] }
 # Issue #149: tabular CLI output
 tabled = "0.14"
+tokio = { version = "1", features = ["full"] }
+rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
+wiremock = "0.6"
+insta = { version = "1", features = ["json"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "cli_benches"
+harness = false

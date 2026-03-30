@@ -1,52 +1,24 @@
-/// Direct Soroban JSON-RPC client using `reqwest` (issue #143).
-///
-/// Implements the three RPC methods needed to submit and track transactions:
-///   - `simulateTransaction`
-///   - `sendTransaction`
-///   - `getTransaction` (with polling)
 use anyhow::{bail, Context, Result};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
-/// A minimal blocking JSON-RPC client for the Soroban RPC endpoint.
+use crate::error::CliError;
+
+/// Blocking Soroban RPC client used by the CLI.
 pub struct RpcClient {
     client: Client,
-    url: String,
+    pub(crate) url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SimulateResult {
-    /// Minimum resource fee in stroops.
-    pub min_resource_fee: Option<String>,
-    /// Error message if simulation failed.
-    pub error: Option<String>,
-    /// Raw simulation response.
-    pub raw: Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SendResult {
-    /// Transaction hash.
-    pub hash: String,
-    /// Submission status ("PENDING", "DUPLICATE", "TRY_AGAIN_LATER", "ERROR").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvokeResponse {
     pub status: String,
-    /// Error result XDR if status is "ERROR".
-    pub error_result_xdr: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetTransactionResult {
-    /// Final status: "SUCCESS", "FAILED", or "NOT_FOUND".
-    pub status: String,
-    /// Result XDR (base64) on success.
-    pub result_xdr: Option<String>,
-    /// Result meta XDR (base64) on success.
-    pub result_meta_xdr: Option<String>,
+    pub transaction_hash: Option<String>,
+    pub result: Value,
 }
 
 impl RpcClient {
-    /// Create a new client targeting the given Soroban RPC URL.
     pub fn new(url: &str) -> Self {
         Self {
             client: Client::new(),
@@ -54,113 +26,157 @@ impl RpcClient {
         }
     }
 
-    /// Call `simulateTransaction` with a base64-encoded transaction envelope XDR.
-    pub fn simulate_transaction(&self, tx_xdr: &str) -> Result<SimulateResult> {
-        let body = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "simulateTransaction",
-            "params": { "transaction": tx_xdr }
-        });
-        let resp = self.call(body)?;
-        let result = resp["result"].clone();
-        Ok(SimulateResult {
-            min_resource_fee: result["minResourceFee"]
-                .as_str()
-                .map(str::to_owned),
-            error: result["error"].as_str().map(str::to_owned),
-            raw: result,
-        })
-    }
-
-    /// Call `sendTransaction` with a base64-encoded signed transaction envelope XDR.
-    pub fn send_transaction(&self, tx_xdr: &str) -> Result<SendResult> {
-        let body = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "sendTransaction",
-            "params": { "transaction": tx_xdr }
-        });
-        let resp = self.call(body)?;
-        let result = &resp["result"];
-        let hash = result["hash"]
-            .as_str()
-            .context("missing hash in sendTransaction response")?
-            .to_owned();
-        let status = result["status"]
-            .as_str()
-            .context("missing status in sendTransaction response")?
-            .to_owned();
-        Ok(SendResult {
-            hash,
-            status,
-            error_result_xdr: result["errorResultXdr"].as_str().map(str::to_owned),
-        })
-    }
-
-    /// Call `getTransaction` for the given transaction hash.
-    pub fn get_transaction(&self, hash: &str) -> Result<GetTransactionResult> {
-        let body = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getTransaction",
-            "params": { "hash": hash }
-        });
-        let resp = self.call(body)?;
-        let result = &resp["result"];
-        let status = result["status"]
-            .as_str()
-            .context("missing status in getTransaction response")?
-            .to_owned();
-        Ok(GetTransactionResult {
-            status,
-            result_xdr: result["resultXdr"].as_str().map(str::to_owned),
-            result_meta_xdr: result["resultMetaXdr"].as_str().map(str::to_owned),
-        })
-    }
-
-    /// Poll `getTransaction` until the transaction is no longer `NOT_FOUND`,
-    /// retrying up to `max_attempts` times with `delay_ms` milliseconds between
-    /// each attempt.
-    pub fn poll_transaction(
+    /// Invokes a contract function directly via Soroban JSON-RPC.
+    pub async fn invoke_contract(
         &self,
-        hash: &str,
-        max_attempts: u32,
-        delay_ms: u64,
-    ) -> Result<GetTransactionResult> {
-        for attempt in 0..max_attempts {
-            let result = self.get_transaction(hash)?;
-            if result.status != "NOT_FOUND" {
-                return Ok(result);
-            }
-            if attempt + 1 < max_attempts {
-                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-            }
-        }
-        bail!("transaction {hash} not found after {max_attempts} attempts")
+        contract_id: &str,
+        source_secret: &str,
+        function: &str,
+        args: &Map<String, Value>,
+        network_passphrase: &str,
+        sim_only: bool,
+    ) -> Result<InvokeResponse> {
+        let payload = build_invoke_payload(
+            contract_id,
+            source_secret,
+            function,
+            args,
+            network_passphrase,
+            sim_only,
+        );
+        let response = self
+            .call(payload)
+            .await
+            .context("contract invocation failed")?;
+        let result = response.get("result").cloned().unwrap_or_else(|| json!({}));
+        let status = result
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or(if sim_only { "SIMULATED" } else { "SUBMITTED" })
+            .to_owned();
+        let transaction_hash = result
+            .get("hash")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
+        Ok(InvokeResponse {
+            status,
+            transaction_hash,
+            result,
+        })
     }
 
-    /// Send a raw JSON-RPC request and return the parsed response.
-    fn call(&self, body: Value) -> Result<Value> {
+    pub async fn query_contract(
+        &self,
+        contract_id: &str,
+        function: &str,
+        args: &Map<String, Value>,
+        network_passphrase: &str,
+    ) -> Result<Value> {
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "invokeContract",
+            "params": {
+                "contractId": contract_id,
+                "function": function,
+                "args": args,
+                "networkPassphrase": network_passphrase,
+                "readOnly": true,
+            }
+        });
+        let response = self
+            .call(payload)
+            .await
+            .context("contract query failed")?;
+        Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    }
+
+    pub async fn get_events(&self, contract_id: &str) -> Result<Vec<Value>> {
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getEvents",
+            "params": {
+                "filters": [{"contractIds": [contract_id]}],
+                "limit": 200
+            }
+        });
+        let response = self
+            .call(payload)
+            .await
+            .context("fetching contract events failed")?;
+        let events = response["result"]["events"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        Ok(events)
+    }
+
+    pub async fn get_contract_wasm_hash(&self, contract_id: &str) -> Result<String> {
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getContractCode",
+            "params": {"contractId": contract_id}
+        });
+        let response = self
+            .call(payload)
+            .await
+            .context("fetching on-chain contract code failed")?;
+        let hash = response["result"]["wasmHash"]
+            .as_str()
+            .ok_or_else(|| CliError::rpc_error("missing wasmHash in getContractCode response"))?;
+        Ok(hash.to_owned())
+    }
+
+    async fn call(&self, body: Value) -> Result<Value> {
         let resp = self
             .client
             .post(&self.url)
             .json(&body)
             .send()
+            .await
             .context("RPC request failed")?;
 
         if !resp.status().is_success() {
-            bail!("RPC HTTP error: {}", resp.status());
+            return Err(CliError::rpc_error(format!(
+                "RPC HTTP error {} while calling {}",
+                resp.status(),
+                body["method"]
+            )).into());
         }
 
-        let json: Value = resp.json().context("failed to parse RPC response")?;
-
+        let json: Value = resp.json().await.context("failed to parse RPC JSON response")?;
         if let Some(err) = json.get("error") {
-            bail!("RPC error: {err}");
+            return Err(CliError::rpc_error(format!("RPC error from {}: {}", body["method"], err)).into());
         }
 
         Ok(json)
     }
+}
+
+pub fn build_invoke_payload(
+    contract_id: &str,
+    source_secret: &str,
+    function: &str,
+    args: &Map<String, Value>,
+    network_passphrase: &str,
+    sim_only: bool,
+) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "invokeContract",
+        "params": {
+            "contractId": contract_id,
+            "source": source_secret,
+            "function": function,
+            "args": args,
+            "networkPassphrase": network_passphrase,
+            "simulate": sim_only,
+        }
+    })
 }
 
 #[cfg(test)]
@@ -168,37 +184,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rpc_client_new() {
+    fn test_build_invoke_payload_contains_expected_fields() {
+        let mut args = Map::new();
+        args.insert("amount".into(), json!(100));
+        let payload = build_invoke_payload(
+            "C123",
+            "S123",
+            "create",
+            &args,
+            "Test SDF Network ; September 2015",
+            true,
+        );
+
+        assert_eq!(payload["method"], "invokeContract");
+        assert_eq!(payload["params"]["contractId"], "C123");
+        assert_eq!(payload["params"]["source"], "S123");
+        assert_eq!(payload["params"]["function"], "create");
+        assert_eq!(payload["params"]["args"]["amount"], 100);
+        assert_eq!(payload["params"]["simulate"], true);
+    }
+
+    #[test]
+    fn test_new_client_keeps_url() {
         let client = RpcClient::new("https://soroban-testnet.stellar.org");
         assert_eq!(client.url, "https://soroban-testnet.stellar.org");
     }
 
-    /// Verify that a network error (bad URL) returns an error rather than panicking.
-    #[test]
-    fn test_simulate_bad_url_returns_error() {
-        let client = RpcClient::new("http://127.0.0.1:1"); // nothing listening
-        let result = client.simulate_transaction("AAAA");
-        assert!(result.is_err(), "should fail with connection refused");
-    }
-
-    #[test]
-    fn test_send_bad_url_returns_error() {
+    #[tokio::test]
+    async fn test_rpc_network_error_is_descriptive() {
         let client = RpcClient::new("http://127.0.0.1:1");
-        let result = client.send_transaction("AAAA");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_get_transaction_bad_url_returns_error() {
-        let client = RpcClient::new("http://127.0.0.1:1");
-        let result = client.get_transaction("deadbeef");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_poll_transaction_bad_url_returns_error() {
-        let client = RpcClient::new("http://127.0.0.1:1");
-        let result = client.poll_transaction("deadbeef", 1, 0);
-        assert!(result.is_err());
+        let result = client.get_events("CABC").await;
+        let err = result.expect_err("should fail without RPC server");
+        assert!(
+            err.to_string().contains("fetching contract events failed"),
+            "unexpected error: {err}"
+        );
     }
 }

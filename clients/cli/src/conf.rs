@@ -17,9 +17,11 @@
 //! (`ESCROW_CONTRACT_ID`, `PAYER_SECRET`, etc.) are still honoured by clap's
 //! `env = "…"` attributes on individual subcommand arguments.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use config::{Config, Environment, File, FileFormat};
 use serde::Deserialize;
+
+use crate::error::CliError;
 
 /// Resolved configuration values loaded from file + env vars.
 /// CLI flags are merged on top of this in `main`.
@@ -54,7 +56,7 @@ impl AppConfig {
                     .required(explicit_path.is_some()),
             );
         } else if explicit_path.is_some() {
-            anyhow::bail!("config file not found: {}", file_path.display());
+            return Err(CliError::config_error(format!("config file not found: {}", file_path.display())).into());
         }
 
         // Layer 2: environment variables with STAR_ESCROW_ prefix
@@ -64,12 +66,35 @@ impl AppConfig {
                 .ignore_empty(true),
         );
 
-        builder
+        let cfg: AppConfig = builder
             .build()
-            .context("building config")?
+            .map_err(|e| CliError::config_error(format!("building config: {}", e)))?
             .try_deserialize()
-            .context("deserialising config")
+            .map_err(|e| CliError::config_error(format!("deserialising config: {}", e)))?;
+
+        Ok(apply_explicit_env_overrides(cfg))
     }
+}
+
+
+
+fn apply_explicit_env_overrides(mut cfg: AppConfig) -> AppConfig {
+    if let Ok(v) = std::env::var("STAR_ESCROW_RPC_URL") {
+        if !v.trim().is_empty() {
+            cfg.rpc_url = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("STAR_ESCROW_NETWORK_PASSPHRASE") {
+        if !v.trim().is_empty() {
+            cfg.network_passphrase = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("STAR_ESCROW_CONTRACT_ID") {
+        if !v.trim().is_empty() {
+            cfg.contract_id = Some(v);
+        }
+    }
+    cfg
 }
 
 #[cfg(test)]

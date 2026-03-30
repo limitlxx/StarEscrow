@@ -25,4 +25,5 @@ pub enum EscrowError {
     InvalidReleaseRecipient = 20,
     UpgradeNotAllowed = 21,
     InvalidWasmHash = 22,
+    InsufficientFunds = 21,
 }
