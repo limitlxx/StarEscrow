@@ -28,37 +28,16 @@ pub fn verify_wasm_hash(path: &std::path::Path, expected_hex: &str) -> Result<bo
     Ok(local.eq_ignore_ascii_case(expected_hex.trim()))
 }
 
-/// Fetch the on-chain WASM hash for a deployed contract via the Stellar CLI
-/// and return it as a lowercase hex string.
+/// Fetch the on-chain WASM hash for a deployed contract via Soroban JSON-RPC.
 pub fn fetch_onchain_hash(
     rpc_url: &str,
-    network_passphrase: &str,
+    _network_passphrase: &str,
     contract_id: &str,
 ) -> Result<String> {
-    let out = std::process::Command::new("stellar")
-        .args([
-            "contract",
-            "fetch",
-            "--id",
-            contract_id,
-            "--rpc-url",
-            rpc_url,
-            "--network-passphrase",
-            network_passphrase,
-            "--output",
-            "wasm",
-        ])
-        .output()
-        .context("stellar CLI not found — install from https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli")?;
-
-    if !out.status.success() {
-        anyhow::bail!(
-            "stellar contract fetch failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    Ok(hash_wasm_bytes(&out.stdout))
+    let client = crate::rpc::RpcClient::new(rpc_url);
+    client
+        .get_contract_wasm_hash(contract_id)
+        .context("unable to fetch on-chain WASM hash via SDK RPC")
 }
 
 #[cfg(test)]
@@ -76,15 +55,21 @@ mod tests {
     fn test_hash_known_value() {
         // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
         let hash = hash_wasm_bytes(b"");
-        assert_eq!(hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 
     #[test]
     fn test_hash_wasm_bytes_is_lowercase_hex() {
         let hash = hash_wasm_bytes(b"some wasm content");
         assert_eq!(hash.len(), 64, "SHA-256 hex must be 64 chars");
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
-            "hash must be lowercase hex");
+        assert!(
+            hash.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+            "hash must be lowercase hex"
+        );
     }
 
     #[test]
