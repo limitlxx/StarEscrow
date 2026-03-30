@@ -3,6 +3,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+use crate::error::CliError;
+
 /// Blocking Soroban RPC client used by the CLI.
 pub struct RpcClient {
     client: Client,
@@ -124,7 +126,7 @@ impl RpcClient {
             .context("fetching on-chain contract code failed")?;
         let hash = response["result"]["wasmHash"]
             .as_str()
-            .context("missing wasmHash in getContractCode response")?;
+            .ok_or_else(|| CliError::rpc_error("missing wasmHash in getContractCode response"))?;
         Ok(hash.to_owned())
     }
 
@@ -138,16 +140,16 @@ impl RpcClient {
             .context("RPC request failed")?;
 
         if !resp.status().is_success() {
-            bail!(
+            return Err(CliError::rpc_error(format!(
                 "RPC HTTP error {} while calling {}",
                 resp.status(),
                 body["method"]
-            );
+            )).into());
         }
 
         let json: Value = resp.json().await.context("failed to parse RPC JSON response")?;
         if let Some(err) = json.get("error") {
-            bail!("RPC error from {}: {}", body["method"], err);
+            return Err(CliError::rpc_error(format!("RPC error from {}: {}", body["method"], err)).into());
         }
 
         Ok(json)

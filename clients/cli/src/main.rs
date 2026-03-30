@@ -1,10 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Map, Value};
 use tabled::{Table, Tabled};
 
 mod conf;
 mod deadline;
+mod error;
 mod keypair;
 mod keystore;
 mod native_xdr;
@@ -13,6 +14,8 @@ mod prompt;
 mod rpc;
 mod wasm_hash;
 mod xdr;
+
+pub use error::CliError;
 
 use rpc::RpcClient;
 
@@ -183,7 +186,7 @@ async fn main() -> Result<()> {
             fee_collector,
         } => {
             let admin_addr = keypair::public_address_from_secret(&admin_secret)
-                .context("failed to derive admin address from ADMIN_SECRET")?;
+                .map_err(|e| CliError::invalid_secret_key(&format!("ADMIN_SECRET: {}", e)))?;
             invoke_write(
                 &client,
                 &rpc_url,
@@ -241,7 +244,7 @@ async fn main() -> Result<()> {
             deadline,
         } => {
             let payer_addr = keypair::public_address_from_secret(&payer_secret)
-                .context("failed to derive payer address from PAYER_SECRET")?;
+                .map_err(|e| CliError::invalid_secret_key(&format!("PAYER_SECRET: {}", e)))?;
             let deadline_ts = parse_deadline(deadline)?;
             invoke_write(
                 &client,
@@ -478,7 +481,7 @@ fn parse_deadline(deadline: Option<String>) -> Result<Option<u64>> {
             .unwrap_or_else(|| {
                 deadline::parse_iso8601_to_timestamp(&raw)
                     .map(Some)
-                    .context("invalid --deadline: expected unix timestamp or ISO8601")
+                    .map_err(|_| CliError::invalid_deadline(&raw).into())
             }),
     }
 }
@@ -582,6 +585,14 @@ mod tests {
     #[test]
     fn test_deadline_parsing_invalid_is_descriptive() {
         let err = parse_deadline(Some("bad-date".to_string())).expect_err("must fail");
-        assert!(err.to_string().contains("invalid --deadline"));
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid deadline format"), "Error message should mention 'Invalid deadline format': {}", msg);
+        assert!(msg.contains("bad-date"), "Error message should include the invalid input: {}", msg);
+    }
+
+    #[test]
+    fn test_invalid_deadline_type_shows_cli_error() {
+        let err = parse_deadline(Some("!@#$%".to_string())).expect_err("must fail");
+        assert!(err.to_string().contains("Invalid deadline"));
     }
 }
