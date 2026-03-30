@@ -18,6 +18,9 @@ mod conf;
 mod prompt;
 mod progress;
 
+#[cfg(test)]
+mod rpc_mock_tests;
+
 /// StarEscrow CLI — interact with the escrow contract on Stellar Testnet.
 ///
 /// Prerequisites:

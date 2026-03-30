@@ -1,6 +1,7 @@
 # StarEscrow
 
 [![CI](https://github.com/The-Pantseller/StarEscrow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/The-Pantseller/StarEscrow/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/The-Pantseller/StarEscrow/branch/main/graph/badge.svg)](https://codecov.io/gh/The-Pantseller/StarEscrow)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 StarEscrow is a programmable escrow protocol for freelance and marketplace payments on the Stellar network, built with Soroban smart contracts. It locks funds on-chain when a job is created, optionally routes them through a yield protocol while work is in progress, and releases payment to the freelancer upon payer approval — or refunds the payer on cancellation or deadline expiry. A configurable fee (in basis points) is deducted from the released amount and forwarded to a fee collector address.
