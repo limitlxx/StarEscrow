@@ -28,18 +28,50 @@ jobs:
         run: cargo test --workspace
         env:
           SOROBAN_TEST_SNAPSHOT_UPDATE: "0"
+          # Fail CI if insta snapshots are missing or changed.
+          INSTA_UPDATE: "no"
 
-  udeps:
-    name: Unused dependencies (advisory)
+      - name: Validate insta snapshots
+        run: |
+          cargo install cargo-insta --locked 2>/dev/null || true
+          cargo insta test --workspace --unreferenced=reject
+        env:
+          INSTA_UPDATE: "no"
+
+  bench:
+    name: Benchmarks (smoke-test)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-udeps
-        run: cargo install cargo-udeps --locked
+      - name: Run benchmarks (1 sample — smoke test only)
+        run: cargo bench -p cli -- --sample-size 10
 
-      - name: Run cargo udeps
-        run: cargo +nightly udeps --workspace
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-results
+          path: target/criterion/
+
+  deny:
+    name: License & advisory check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+  machete:
+    name: Unused dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+      - name: Run cargo-machete
+        run: cargo machete

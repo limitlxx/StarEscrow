@@ -1,0 +1,86 @@
+name: WASM Size
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  wasm-size:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-opt
+        run: |
+          cargo install wasm-opt --locked 2>/dev/null || \
+            (sudo apt-get update -qq && sudo apt-get install -y binaryen)
+
+      - name: Build WASM (PR branch)
+        run: cargo build --target wasm32-unknown-unknown --profile contract-release -p escrow
+        env:
+          CARGO_TERM_COLOR: always
+
+      - name: Record PR WASM size
+        id: pr_size
+        run: |
+          SIZE=$(wc -c < target/wasm32-unknown-unknown/contract-release/escrow.wasm)
+          echo "bytes=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Build WASM (base branch)
+        run: |
+          git stash --include-untracked || true
+          git checkout ${{ github.base_ref }}
+          cargo build --target wasm32-unknown-unknown --profile contract-release -p escrow
+          BASE_SIZE=$(wc -c < target/wasm32-unknown-unknown/contract-release/escrow.wasm)
+          echo "BASE_SIZE=$BASE_SIZE" >> "$GITHUB_ENV"
+          git checkout -
+
+      - name: Compare sizes and comment
+        uses: actions/github-script@v7
+        env:
+          PR_SIZE: ${{ steps.pr_size.outputs.bytes }}
+        with:
+          script: |
+            const prSize  = parseInt(process.env.PR_SIZE);
+            const baseSize = parseInt(process.env.BASE_SIZE);
+            const delta    = prSize - baseSize;
+            const pct      = baseSize > 0 ? ((delta / baseSize) * 100).toFixed(2) : '0.00';
+            const sign     = delta >= 0 ? '+' : '';
+            const kb       = (n) => (n / 1024).toFixed(2);
+
+            const exceeded = delta > 0 && (delta / baseSize) > 0.10;
+
+            const body = [
+              '## WASM Size Report',
+              '',
+              `| | Size |`,
+              `|---|---|`,
+              `| Base (\`${{ github.base_ref }}\`) | ${kb(baseSize)} KB |`,
+              `| PR | ${kb(prSize)} KB |`,
+              `| Delta | ${sign}${kb(delta)} KB (${sign}${pct}%) |`,
+              '',
+              exceeded
+                ? '> ⚠️ **Size increased by more than 10% — please investigate before merging.**'
+                : '> ✅ Size change is within the 10% threshold.',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+            if (exceeded) {
+              core.setFailed(`WASM size increased by ${pct}% (threshold: 10%)`);
+            }
