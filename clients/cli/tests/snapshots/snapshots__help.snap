@@ -3,7 +3,7 @@ source: clients/cli/tests/snapshots.rs
 assertion_line: 24
 expression: output
 ---
-Usage: star-escrow [OPTIONS] <COMMAND>
+Usage: star-escrow.exe [OPTIONS] <COMMAND>
 
 Commands:
   init                 
@@ -16,6 +16,7 @@ Commands:
   cancel               
   expire               
   status               
+  watch                Watch a contract's status, polling periodically
   list                 
   verify               
   help                 Print this message or the help of the given subcommand(s)

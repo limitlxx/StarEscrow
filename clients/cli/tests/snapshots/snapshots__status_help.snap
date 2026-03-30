@@ -3,7 +3,7 @@ source: clients/cli/tests/snapshots.rs
 assertion_line: 30
 expression: output
 ---
-Usage: star-escrow status [OPTIONS] --contract-id <CONTRACT_ID>
+Usage: star-escrow.exe status [OPTIONS] --contract-id <CONTRACT_ID>
 
 Options:
       --contract-id <CONTRACT_ID>  [env: ESCROW_CONTRACT_ID=]

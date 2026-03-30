@@ -3,7 +3,7 @@ source: clients/cli/tests/snapshots.rs
 assertion_line: 36
 expression: output
 ---
-Usage: star-escrow create [OPTIONS] --contract-id <CONTRACT_ID> --payer-secret <PAYER_SECRET> --freelancer <FREELANCER> --token <TOKEN> --amount <AMOUNT> --milestone <MILESTONE>
+Usage: star-escrow.exe create [OPTIONS] --contract-id <CONTRACT_ID> --payer-secret <PAYER_SECRET> --freelancer <FREELANCER> --token <TOKEN> --amount <AMOUNT> --milestone <MILESTONE>
 
 Options:
       --contract-id <CONTRACT_ID>    [env: ESCROW_CONTRACT_ID=]
