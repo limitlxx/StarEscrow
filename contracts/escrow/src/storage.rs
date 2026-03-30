@@ -1,20 +1,6 @@
 use soroban_sdk::{ contracttype, Address, Env, String, Vec };
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MilestoneStatus {
-    Pending,
-    Submitted,
-    Approved,
-}
 
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct Milestone {
-    pub description: String,
-    pub amount: i128,
-    pub status: MilestoneStatus,
-}
 
 
 /// Minimum ledgers before TTL extension kicks in (~1 day at 5s/ledger).
@@ -160,6 +146,8 @@ pub enum DataKey {
     ReputationContract,
     /// Address of the governance contract allowed to call gov_apply.
     GovernanceContract,
+    /// Contract version for migration tracking.
+    Version,
 }
 
 pub fn save_governance_contract(env: &Env, addr: &Address) {
@@ -305,4 +293,14 @@ pub fn save_reputation_contract(env: &Env, addr: &Address) {
 #[allow(dead_code)]
 pub fn load_reputation_contract(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::ReputationContract)
+}
+
+/// Get the current contract version for migration purposes.
+pub fn get_contract_version(env: &Env) -> Option<u32> {
+    env.storage().instance().get(&DataKey::Version)
+}
+
+/// Set the contract version (used after migrations).
+pub fn set_contract_version(env: &Env, version: u32) {
+    env.storage().instance().set(&DataKey::Version, &version);
 }

@@ -23,4 +23,6 @@ pub enum EscrowError {
     DisputeNotAllowed = 18,
     NotDisputed = 19,
     InvalidReleaseRecipient = 20,
+    UpgradeNotAllowed = 21,
+    InvalidWasmHash = 22,
 }
