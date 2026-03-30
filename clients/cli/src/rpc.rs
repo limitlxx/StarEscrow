@@ -1,7 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+
+use crate::error::CliError;
 
 /// Blocking Soroban RPC client used by the CLI.
 pub struct RpcClient {
@@ -42,7 +44,8 @@ impl RpcClient {
             network_passphrase,
             sim_only,
         );
-        let response = self.call(payload).context("contract invocation failed")?;
+        let response = self.call(payload)
+            .map_err(|e| CliError::rpc_error(format!("contract invocation failed: {}", e)))?;
         let result = response.get("result").cloned().unwrap_or_else(|| json!({}));
         let status = result
             .get("status")
@@ -80,7 +83,8 @@ impl RpcClient {
                 "readOnly": true,
             }
         });
-        let response = self.call(payload).context("contract query failed")?;
+        let response = self.call(payload)
+            .map_err(|e| CliError::rpc_error(format!("contract query failed: {}", e)))?;
         Ok(response.get("result").cloned().unwrap_or(Value::Null))
     }
 
@@ -96,7 +100,7 @@ impl RpcClient {
         });
         let response = self
             .call(payload)
-            .context("fetching contract events failed")?;
+            .map_err(|e| CliError::rpc_error(format!("fetching contract events failed: {}", e)))?;
         let events = response["result"]["events"]
             .as_array()
             .cloned()
@@ -113,10 +117,10 @@ impl RpcClient {
         });
         let response = self
             .call(payload)
-            .context("fetching on-chain contract code failed")?;
+            .map_err(|e| CliError::rpc_error(format!("fetching on-chain contract code failed: {}", e)))?;
         let hash = response["result"]["wasmHash"]
             .as_str()
-            .context("missing wasmHash in getContractCode response")?;
+            .ok_or_else(|| CliError::rpc_error("missing wasmHash in getContractCode response"))?;
         Ok(hash.to_owned())
     }
 
@@ -126,19 +130,20 @@ impl RpcClient {
             .post(&self.url)
             .json(&body)
             .send()
-            .context("RPC request failed")?;
+            .map_err(|e| CliError::rpc_error(format!("RPC request failed: {}", e)))?;
 
         if !resp.status().is_success() {
-            bail!(
+            return Err(CliError::rpc_error(format!(
                 "RPC HTTP error {} while calling {}",
                 resp.status(),
                 body["method"]
-            );
+            )).into());
         }
 
-        let json: Value = resp.json().context("failed to parse RPC JSON response")?;
+        let json: Value = resp.json()
+            .map_err(|e| CliError::rpc_error(format!("failed to parse RPC JSON response: {}", e)))?;
         if let Some(err) = json.get("error") {
-            bail!("RPC error from {}: {}", body["method"], err);
+            return Err(CliError::rpc_error(format!("RPC error from {}: {}", body["method"], err)).into());
         }
 
         Ok(json)

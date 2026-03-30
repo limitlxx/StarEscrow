@@ -5,11 +5,13 @@
 ///   - Deriving a public address (G...) from a secret key (S...)
 ///   - Signing arbitrary payloads (e.g. transaction hashes)
 ///   - Verifying signatures
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use stellar_strkey::ed25519::{PrivateKey as StrkeySecret, PublicKey as StrkeyPublic};
+
+use crate::error::CliError;
 
 /// A Stellar keypair wrapping an ed25519 signing key.
 pub struct Keypair {
@@ -29,7 +31,7 @@ impl Keypair {
     /// Parse a Stellar secret key string (S...) into a Keypair.
     pub fn from_secret_str(secret: &str) -> Result<Self> {
         let strkey = StrkeySecret::from_string(secret)
-            .context("invalid Stellar secret key (expected S... strkey)")?;
+            .map_err(|_| CliError::invalid_secret_key(secret))?;
         let signing_key = SigningKey::from_bytes(&strkey.0);
         Ok(Self { signing_key })
     }
@@ -58,7 +60,8 @@ impl Keypair {
         self.signing_key
             .verifying_key()
             .verify(payload, &sig)
-            .context("signature verification failed")
+            .map_err(|_| CliError::crypto_error("signature verification failed"))?;
+        Ok(())
     }
 }
 
